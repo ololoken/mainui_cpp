@@ -156,7 +156,6 @@ int UI_FadeAlpha( int starttime, int endtime );
 const char *Info_ValueForKey( const char *s, const char *key );
 int KEY_GetKey( const char *binding );			// ripped out from engine
 char *StringCopy( const char *input );			// copy string into new memory
-int COM_CompareSaves( const void **a, const void **b );
 void Com_EscapeCommand( char *newCommand, const char *oldCommand, int len );
 void UI_EnableTextInput( bool enable );
 
@@ -403,8 +402,6 @@ namespace Names
 bool CheckIsNameValid( const char *name );
 }
 }
-extern const int table_cp1251[64];
-int Con_UtfProcessChar(int in );
 int Con_UtfMoveLeft( const char *str, int pos );
 int Con_UtfMoveRight( const char *str, int pos, int length );
 
