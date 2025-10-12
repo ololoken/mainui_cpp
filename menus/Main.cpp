@@ -331,8 +331,8 @@ void CMenuMain::VidInit( bool connected )
 	minimizeBtn.SetRect( uiStatic.width - 72, 13, 32, 32 );
 	quitButton.SetRect( uiStatic.width - 36, 13, 32, 32 );
 
-	previews.SetCoord( hoffset, previews_voffset );
-	quit.SetCoord( hoffset, previews_voffset + ygap );
+	bool isGameLoaded = EngFuncs::GetCvarFloat( "host_gameloaded" ) != 0.0f;
+	bool isSingle = gpGlobals->maxClients < 2;
 
 	// let's start calculating positions
 	int yoffset = previews_voffset - ygap;
