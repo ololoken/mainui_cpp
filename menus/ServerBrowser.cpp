@@ -66,7 +66,6 @@ struct server_t
 	char ipstr[64];
 	bool favorite;
 	bool havePassword;
-	bool isLegacy;
 	bool isGoldSrc;
 	bool pending_info;
 
@@ -76,16 +75,8 @@ struct server_t
 
 	const char *ToProtocol( void )
 	{
-		if( isLegacy ) return "48";
 		if( isGoldSrc ) return "gs";
 		return "49";
-	}
-
-	int Rank( const server_t &other ) const
-	{
-		if( isLegacy > other.isLegacy ) return 100;
-		else if( isLegacy < other.isLegacy ) return -100;
-		return 0;
 	}
 
 	int NameCmp( const server_t &other ) const
@@ -127,16 +118,14 @@ struct server_t
 		return numcl >= maxcl;
 	}
 
-	// make generic
-	// always rank new servers higher, even when sorting in reverse order
 #define GENERATE_COMPAR_FN( method ) \
 	static int method ## Ascend( const void *a, const void *b ) \
 	{\
-		return (( const server_t *)a)->Rank( *(( const server_t *)b) ) + (( const server_t *)a)->method( *(( const server_t *)b) );\
+		return (( const server_t *)a)->method( *(( const server_t *)b) );\
 	}\
 	static int method ## Descend( const void *a, const void *b ) \
 	{\
-		return (( const server_t *)a)->Rank( *(( const server_t *)b) ) + (( const server_t *)b)->method( *(( const server_t *)a) );\
+		return (( const server_t *)b)->method( *(( const server_t *)a) );\
 	}\
 
 	GENERATE_COMPAR_FN( NameCmp )
@@ -164,10 +153,6 @@ struct favlist_entry_t
 		if( !stricmp( prot, "current" ) || !strcmp( prot, "49" ))
 		{
 			info.Append( "\\p\\49" );
-		}
-		else if( !stricmp( prot, "legacy" ) || !strcmp( prot, "48" ))
-		{
-			info.Append( "\\p\\48\\legacy\\1" );
 		}
 		else if( !stricmp( prot, "goldsrc" ) || !stricmp( prot, "gs" ))
 		{
@@ -302,17 +287,6 @@ public:
 
 	bool GetCellColors( int line, int column, unsigned int &textColor, bool &force) const override
 	{
-		if( servers[line].isLegacy )
-		{
-			CColor color = uiPromptTextColor;
-			color.a = color.a * 0.5;
-			textColor = color;
-
-			// allow colorstrings only in server name
-			force = column != COLUMN_NAME;
-
-			return true;
-		}
 		return false;
 	}
 
@@ -451,7 +425,7 @@ void UI_ServerBrowser_Menu( void )
 	if ( gpGlobals->demoplayback && EngFuncs::GetCvarFloat( "cl_background" ))
 	{
 		uiStatic.m_iOldMenuDepth = uiStatic.menu.Count();
-		EngFuncs::ClientCmd( FALSE, "stop\n" );
+		EngFuncs::ClientCmd( false, "stop\n" );
 		uiStatic.m_fDemosPlayed = true;
 	}
 
@@ -488,15 +462,11 @@ void server_t::UpdateData( void )
 	snprintf( clientsstr, sizeof( clientsstr ), "%d\\%d", numcl, maxcl );
 	havePassword = !strcmp( Info_ValueForKey( info, "password" ), "1" );
 	isGoldSrc = !strcmp( Info_ValueForKey( info, "gs" ), "1" );
-	isLegacy = !strcmp( Info_ValueForKey( info, "legacy" ), "1" );
 }
 
 void server_t::SetPing( float ping )
 {
 	ping = bound( 0.0f, ping, MAX_PING );
-
-	if( isLegacy )
-		ping /= 2;
 
 	this->ping = ping;
 	snprintf( pingstr, sizeof( pingstr ), "%.f ms", ping * 1000 );
@@ -804,6 +774,10 @@ void CMenuServerBrowser::ParseServerListFromFile( const char *filename, CUtlVect
 		if( !afile )
 			break;
 
+		// ignore legacy protocol
+		if( !strcmp( entry.prot, "48" ))
+			continue;
+
 		list.AddToTail( entry );
 	}
 
@@ -875,7 +849,7 @@ void CMenuServerBrowser::RefreshList()
 
 	if( m_bLanOnly )
 	{
-		EngFuncs::ClientCmd( FALSE, "localservers\n" );
+		EngFuncs::ClientCmd( false, "localservers\n" );
 	}
 	else if( uiStatic.realTime > refreshTime2 )
 	{
@@ -910,7 +884,7 @@ void CMenuServerBrowser::RefreshList()
 				buf += n;
 			}
 
-			EngFuncs::ClientCmdF( FALSE, "internetservers %s\n", filter );
+			EngFuncs::ClientCmdF( false, "internetservers %s\n", filter );
 		}
 
 		refreshTime2 = uiStatic.realTime + (EngFuncs::GetCvarFloat("cl_nat") ? 4000:1000);
@@ -927,7 +901,7 @@ void CMenuServerBrowser::ViewGameInfo()
 	if( idx < 0 || idx >= gameListModel.GetRows( ))
 		return;
 
-	UI_ServerInfo_Menu( gameListModel.servers[idx].adr, gameListModel.servers[idx].name, gameListModel.servers[idx].isLegacy );
+	UI_ServerInfo_Menu( gameListModel.servers[idx].adr, gameListModel.servers[idx].name );
 }
 
 void CMenuServerBrowser::OnTabSwitch()
@@ -983,9 +957,6 @@ void CMenuServerBrowser::AddServer( void )
 		proto = "49";
 		break;
 	case 1:
-		proto = "48";
-		break;
-	case 2:
 		proto = "gs";
 		break;
 	default:
@@ -995,22 +966,37 @@ void CMenuServerBrowser::AddServer( void )
 
 	// FIXME: for now we can only show custom servers at favorites tab
 
+	// Check for duplicates in favorites list
+	FOR_EACH_VEC( favoritesList, i )
+	{
+		if( !strcmp( favoritesList[i].sadr, addressField.GetBuffer() ) &&
+		    !strcmp( favoritesList[i].prot, proto ))
+		{
+			UI_ShowMessageBox( L( "Server already in favorites" ));
+			return;
+		}
+	}
+
 	favlist_entry_t entry( addressField.GetBuffer(), proto, false );
 	favoritesList.AddToTail( entry );
 
 	if( tabSwitch.GetState() != 2 )
+	{
 		tabSwitch.SetState( 2 );
+	}
+	else
+	{
+		CUtlString fakeInfoString;
+		entry.GenerateDummyInfoString( fakeInfoString );
 
-	CUtlString fakeInfoString;
-	entry.GenerateDummyInfoString( fakeInfoString );
+		server_t serv( adr, fakeInfoString, false, true );
+		serv.UpdateData();
+		serv.SetPing( MAX_PING );
+		gameListModel.servers.AddToTail( serv );
 
-	server_t serv( adr, fakeInfoString, false, true );
-	serv.UpdateData();
-	serv.SetPing( 9.999f );
-	gameListModel.servers.AddToTail( serv );
-
-	entry.QueryServer();
-	UI_MenuResetPing_f();
+		entry.QueryServer();
+		UI_MenuResetPing_f();
+	}
 }
 
 /*
@@ -1149,8 +1135,7 @@ void CMenuServerBrowser::_Init( void )
 
 	static const char *protlist[] =
 	{
-		"Xash3D 49 (New)",
-		"Xash3D 48 (Old)",
+		"Xash3D 49",
 		"GoldSource 48",
 	};
 	static CStringArrayModel protlistModel( protlist, V_ARRAYSIZE( protlist ));
@@ -1306,8 +1291,10 @@ void CMenuServerBrowser::Show()
 
 		favoritesList.RemoveAll();
 		historyList.RemoveAll();
-		ParseServerListFromFile( "favorite_servers.lst", favoritesList );
-		ParseServerListFromFile( "history_servers.lst", historyList );
+		if( EngFuncs::FileExists( "favorite_servers.lst", true ) )
+			ParseServerListFromFile( "favorite_servers.lst", favoritesList );
+		if( EngFuncs::FileExists( "history_servers.lst", true ) )
+			ParseServerListFromFile( "history_servers.lst", historyList );
 	}
 
 	RealignButtons();
@@ -1361,7 +1348,7 @@ void CMenuServerBrowser::AddServerToList( netadr_t adr, const char *info )
 	{
 		if( !strcmp( favoritesList[i].sadr, s ))
 		{
-			is_favorite = true;
+			is_favorite = favoritesList[i].favorited;
 			break;
 		}
 	}

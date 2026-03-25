@@ -66,6 +66,7 @@ public:
 	CMenuCreateGame() : CMenuFramework("CMenuCreateGame"), mapsListModel( this ) { }
 	static void Begin( CMenuBaseItem *pSelf, void *pExtra );
 
+	void Show() override;
 	void Reload( void ) override;
 	void SaveCvars( void );
 
@@ -116,16 +117,17 @@ void CMenuCreateGame::Begin( CMenuBaseItem *pSelf, void *pExtra )
 
 	EngFuncs::CvarSetValue( "deathmatch", 1.0f );	// start deathmatch as default
 	menu->SaveCvars();
+	UI_SaveScriptConfig();
+	UI_ApplyServerSettings();
 
 	EngFuncs::PlayBackgroundTrack( NULL, NULL );
 
 	// all done, start server
 	const char *listenservercfg = EngFuncs::GetCvarString( "lservercfgfile" );
-	EngFuncs::WriteServerConfig( listenservercfg );
 
 	char cmd[1024];
 	snprintf( cmd, sizeof( cmd ), "exec %s\n", listenservercfg );
-	EngFuncs::ClientCmd( TRUE, cmd );
+	EngFuncs::ClientCmd( true, cmd );
 
 	// dirty listenserver config form old xash may rewrite maxplayers
 	menu->maxClients.WriteCvar();
@@ -134,7 +136,7 @@ void CMenuCreateGame::Begin( CMenuBaseItem *pSelf, void *pExtra )
 	char cmd2[256];
 	Com_EscapeCommand( cmd2, mapName, sizeof( cmd2 ));
 	snprintf( cmd, sizeof( cmd ), "disconnect;menu_connectionprogress localserver;wait;wait;wait;maxplayers %i;latch;map %s\n", atoi( menu->maxClients.GetBuffer() ), cmd2 );
-	EngFuncs::ClientCmd( FALSE, cmd );
+	EngFuncs::ClientCmd( false, cmd );
 }
 
 /*
@@ -151,7 +153,7 @@ void CMenuMapListModel::Update( void )
 
 	RemoveAll();
 
-	if( !EngFuncs::CreateMapsList( TRUE ) || (afile = (char *)EngFuncs::COM_LoadFile( "maps.lst", NULL )) == NULL )
+	if( !EngFuncs::CreateMapsList( true ) || (afile = (char *)EngFuncs::COM_LoadFile( "maps.lst", NULL )) == NULL )
 	{
 		parent->done->SetGrayed( true );
 		Con_Printf( "Cmd_GetMapsList: can't open maps.lst\n" );
@@ -180,6 +182,10 @@ void CMenuMapListModel::Update( void )
 			break; // unexpected end of file
 		}
 		Q_strncpy( map.desc, token, sizeof( map.desc ));
+
+		if ( !strncmp( map.name, "tr_", 3 ) )
+			continue;
+
 		AddToTail( map );
 	}
 
@@ -219,6 +225,11 @@ void CMenuCreateGame::_Init( void )
 
 	hostName.szName = L( "GameUI_ServerName" );
 	hostName.iMaxLength = 28;
+	SET_EVENT_MULTI( hostName.onCvarGet,
+	{
+		CMenuField *self = (CMenuField*)pSelf;
+		self->SetBuffer( UI_GetScriptCvar( self->CvarName() ) );
+	});
 	hostName.LinkCvar( "hostname" );
 
 	maxClients.iMaxLength = 3;
@@ -239,6 +250,9 @@ void CMenuCreateGame::_Init( void )
 	SET_EVENT_MULTI( maxClients.onCvarGet,
 	{
 		CMenuField *self = (CMenuField*)pSelf;
+		const char *val = UI_GetScriptCvar( self->CvarName() );
+		self->SetBuffer( val );
+
 		const char *buf = self->GetBuffer();
 
 		int players = atoi( buf );
@@ -253,6 +267,11 @@ void CMenuCreateGame::_Init( void )
 	password.iMaxLength = 16;
 	password.eTextAlignment = QM_CENTER;
 	password.bHideInput = true;
+	SET_EVENT_MULTI( password.onCvarGet,
+	{
+		CMenuField *self = (CMenuField*)pSelf;
+		self->SetBuffer( UI_GetScriptCvar( self->CvarName() ) );
+	});
 	password.LinkCvar( "sv_password" );
 
 	msgBox.onPositive = Begin;
@@ -281,11 +300,29 @@ void CMenuCreateGame::_VidInit()
 	password.SetRect( 350, 460, 205, 32 );
 }
 
+void CMenuCreateGame::Show()
+{
+	UI_LoadScriptConfig();
+
+	hostName.UpdateCvar( true );
+	maxClients.UpdateCvar( true );
+	password.UpdateCvar( true );
+	nat.UpdateCvar( true );
+
+	CMenuBaseWindow::Show();
+}
+
 void CMenuCreateGame::SaveCvars()
 {
 	hostName.WriteCvar();
 	maxClients.WriteCvar();
 	password.WriteCvar();
+
+	// update script variables so they are saved to settings.scr
+	UI_SetScriptCvar( "hostname", hostName.GetBuffer() );
+	UI_SetScriptCvar( "maxplayers", maxClients.GetBuffer() );
+	UI_SetScriptCvar( "sv_password", password.GetBuffer() );
+
 	EngFuncs::CvarSetValue( "sv_nat", EngFuncs::GetCvarFloat( "public" ) ? nat.bChecked : 0 );
 }
 
