@@ -69,6 +69,7 @@ private:
 	CMenuPicButton	hazardCourse;
 	CMenuPicButton	configuration;
 	CMenuPicButton	saveRestore;
+	CMenuPicButton	worldMap;  // CZ:DS
 	CMenuPicButton	multiPlayer;
 	CMenuPicButton	customGame;
 	CMenuPicButton	previews;
@@ -83,6 +84,11 @@ private:
 
 	bool bTrainMap;
 	bool bCustomGame;
+
+	// visibility of singleplayer-related buttons
+	bool bShowNewGame;
+	bool bShowHazardCourse;
+	bool bShowSaveRestore;
 };
 
 void CMenuMain::QuitDialogCb()
@@ -149,17 +155,7 @@ UI_Main_HazardCourse
 */
 void CMenuMain::HazardCourseCb()
 {
-	if( EngFuncs::GetCvarFloat( "host_serverstate" ) && EngFuncs::GetCvarFloat( "maxplayers" ) > 1 )
-		EngFuncs::HostEndGame( "end of the game" );
-
-	EngFuncs::CvarSetValue( "skill", 1.0f );
-	EngFuncs::CvarSetValue( "deathmatch", 0.0f );
-	EngFuncs::CvarSetValue( "teamplay", 0.0f );
-	EngFuncs::CvarSetValue( "pausable", 1.0f ); // singleplayer is always allowing pause
-	EngFuncs::CvarSetValue( "coop", 0.0f );
-	EngFuncs::CvarSetValue( "maxplayers", 1.0f ); // singleplayer
-
-	EngFuncs::PlayBackgroundTrack( NULL, NULL );
+	UI_PrepareSingleplayerGame( 1 );
 
 	EngFuncs::ClientCmd( false, "hazardcourse\n" );
 }
@@ -218,6 +214,13 @@ void CMenuMain::_Init( void )
 
 	saveRestore.iFlags |= QMF_NOTIFY;
 
+	if( UI_IsCZDS( ))
+	{
+		worldMap.SetNameAndStatus( L_GAME( "CZERO_WorldMap" ), L( "Choose a mission" ) );
+		worldMap.iFlags |= QMF_NOTIFY;
+		worldMap.onReleased = UI_WorldMap_Menu;
+	}
+
 	customGame.SetNameAndStatus( L( "GameUI_ChangeGame" ), L( "StringsList_530" ) );
 	customGame.SetPicture( PC_CUSTOM_GAME );
 	customGame.iFlags |= QMF_NOTIFY;
@@ -243,17 +246,19 @@ void CMenuMain::_Init( void )
 	minimizeBtn.eFocusAnimation = QM_HIGHLIGHTIFFOCUS;
 	minimizeBtn.onReleased.SetCommand( false, "minimize\n" );
 
-	if ( gMenu.m_gameinfo.gamemode == GAME_MULTIPLAYER_ONLY || gMenu.m_gameinfo.startmap[0] == 0 )
-		newGame.SetGrayed( true );
+	const bool mpOnly = gMenu.m_gameinfo.gamemode == GAME_MULTIPLAYER_ONLY;
+	const bool hasStartMap = gMenu.m_gameinfo.startmap[0] != 0;
+
+	// singleplayer-related buttons are not added to the menu at all
+	// when they can't be used, so they don't take any space
+	bShowNewGame = !mpOnly && hasStartMap;
+
+	// Counter-Strike may define a training map despite being marked as GAME_MULTIPLAYER_ONLY
+	bShowHazardCourse = bTrainMap;
+	bShowSaveRestore = !mpOnly || bTrainMap;
 
 	if ( gMenu.m_gameinfo.gamemode == GAME_SINGLEPLAYER_ONLY )
 		multiPlayer.SetGrayed( true );
-
-	if ( gMenu.m_gameinfo.gamemode == GAME_MULTIPLAYER_ONLY )
-	{
-		saveRestore.SetGrayed( true );
-		hazardCourse.SetGrayed( true );
-	}
 
 	// too short execute string - not a real command
 	if( strlen( MenuStrings[IDS_MEDIA_PREVIEWURL] ) <= 3 )
@@ -285,13 +290,21 @@ void CMenuMain::_Init( void )
 	AddItem( console );
 	AddItem( disconnect );
 	AddItem( resumeGame );
-	AddItem( newGame );
 
-	if ( bTrainMap )
+	if ( bShowNewGame )
+		AddItem( newGame );
+
+	if( UI_IsCZDS( ))
+		AddItem( worldMap );
+
+	if ( bShowHazardCourse )
 		AddItem( hazardCourse );
 
 	AddItem( configuration );
-	AddItem( saveRestore );
+
+	if ( bShowSaveRestore )
+		AddItem( saveRestore );
+
 	AddItem( multiPlayer );
 
 	if ( bCustomGame )
@@ -339,20 +352,32 @@ void CMenuMain::VidInit( bool connected )
 
 	bool single = gpGlobals->maxClients < 2;
 
-	saveRestore.SetCoord( hoffset, yoffset );
-	yoffset -= ygap;
+	if( bShowSaveRestore )
+	{
+		saveRestore.SetCoord( hoffset, yoffset );
+		yoffset -= ygap;
+	}
 
 	configuration.SetCoord( hoffset, yoffset );
 	yoffset -= ygap;
 
-	if( bTrainMap )
+	if( bShowHazardCourse )
 	{
 		hazardCourse.SetCoord( hoffset, yoffset );
 		yoffset -= ygap;
 	}
 
-	newGame.SetCoord( hoffset, yoffset );
-	yoffset -= ygap;
+	if( UI_IsCZDS( ))
+	{
+		worldMap.SetCoord( hoffset, yoffset );
+		yoffset -= ygap;
+	}
+
+	if( bShowNewGame )
+	{
+		newGame.SetCoord( hoffset, yoffset );
+		yoffset -= ygap;
+	}
 
 	if( connected )
 	{

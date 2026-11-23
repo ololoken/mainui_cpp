@@ -126,6 +126,8 @@ typedef struct
 	bool needMapListUpdate;
 	bool nextFrameActive;
 	bool renderPicbuttonText;
+	bool hideBanners;
+	bool backgroundTopLeft;
 
 	int lowmemory;
 
@@ -221,6 +223,7 @@ int UI_CreditsActive( void );
 void UI_DrawFinalCredits( void );
 
 void UI_CloseMenu( void );
+void UI_PrepareSingleplayerGame( int skill );
 
 // SCR support
 void UI_LoadScriptConfig( void );
@@ -270,6 +273,7 @@ public:
 // Menus
 void UI_Main_Menu( void );
 void UI_NewGame_Menu( void );
+void UI_WorldMap_Menu( void ); // WorldMap.cpp
 void UI_LoadGame_Menu( void );
 void UI_SaveGame_Menu( void );
 void UI_SaveLoad_Menu( void );
@@ -332,5 +336,11 @@ typedef struct
 extern uiFileDialogGlobal_t uiFileDialogGlobal;
 
 extern CMenu gMenu;
+
+// Condition Zero: Deleted Scenes (game folder czeror): the menu has its own look and a world map
+inline bool UI_IsCZDS( void )
+{
+	return !stricmp( gMenu.m_gameinfo.gamefolder, "czeror" );
+}
 
 #endif // BASEMENU_H
